@@ -1,50 +1,74 @@
 import streamlit as st
-from datetime import date
 
 # 페이지 설정
 st.set_page_config(page_title="특정건축물 양성화 판별기", page_icon="🏠", layout="centered")
 
 st.title("🏠 특정건축물 양성화 대상 판별기")
-st.markdown("""
-**[시행 2026. 12. 17.] 특정건축물 정리에 관한 특별조치법**에 따라, 
-보유하신 건축물이 양성화 대상에 포함되는지 간단히 확인해 보세요.
-*주의: 본 결과는 참고용이며, 최종 판단은 관할 지자체 특정건축물 지원센터 또는 건축사를 통해 확인하셔야 합니다.*
+
+# --- 주의사항 및 면책 조항 (크고 강조되게) ---
+st.warning("""
+**🚨 주의사항:** 본 판별기의 결과는 단순 참고용입니다. 
+최종적인 양성화 가능 여부는 반드시 관할 지자체 특정건축물 지원센터 상담 및 **건축사**를 통한 정확한 현장 조사를 거쳐야 합니다.
 """)
+
+# --- 법령 안내문 (접었다 펴기) ---
+with st.expander("📖 양성화 대상 필수 조건 (클릭해서 읽어보세요)", expanded=False):
+    st.markdown("""
+    **[시행 2026. 12. 17.] 특정건축물 정리에 관한 특별조치법 기준**
+    
+    다음 조건을 **모두** 만족해야 양성화 심사 대상이 될 수 있습니다.
+    * **시점:** 2023년 12월 31일 당시에 사실상 완공된 건축물이어야 합니다.
+    * **용도:** 전체 연면적 중 **주거용 비율이 50% 이상**이어야 합니다.
+    * **규모:** 
+        - 다세대주택: 세대당 전용면적 85㎡ 이하
+        - 단독주택: 연면적 165㎡ 이하 (지자체 조례에 따라 최대 330㎡)
+        - 다가구주택: 연면적 660㎡ 이하
+    * **제외 구역:** 개발제한구역, 보전산지, 도시개발구역, 군사기지, 접도구역 등에는 해당하지 않아야 합니다. (단, 구역 지정 전 건축된 경우 등 일부 예외 있음)
+    * **필수 절차:** 건축사가 작성한 설계도서와 현장조사서를 첨부하여 관할 구청에 신고해야 합니다.
+    """)
 
 st.divider()
 
-# --- [1단계] 기본 요건 입력 ---
-st.subheader("1. 기본 요건 확인")
+# --- [1단계] 기본 요건 입력 (글씨 크기 확대) ---
+st.markdown("### <span style='color:#2C3E50'>1. 기본 요건 확인</span>", unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 with col1:
+    st.markdown("<p style='font-size: 18px; font-weight: bold;'>📅 2023년 12월 31일 이전에 사실상 완공되었습니까?</p>", unsafe_allow_html=True)
     is_completed = st.radio(
-        "2023년 12월 31일 이전에 사실상 완공되었습니까?", 
+        "완공 여부", 
         ("예", "아니오"), 
         index=1,
-        help="법률 제3조제1항 기준"
+        label_visibility="collapsed"
     )
 with col2:
+    st.markdown("<p style='font-size: 18px; font-weight: bold;'>🏠 전체 연면적 중 주거용 비율이 50% 이상입니까?</p>", unsafe_allow_html=True)
     is_residential = st.radio(
-        "전체 연면적 중 주거용 비율이 50% 이상입니까?", 
+        "주거용 비율", 
         ("예", "아니오"), 
         index=1,
-        help="법률 제2조제1항제2호 기준"
+        label_visibility="collapsed"
     )
 
-# --- [2단계] 규모 및 면적 요건 입력 ---
-st.subheader("2. 건축물 유형 및 규모 확인")
+st.write("") # 여백 추가
 
+# --- [2단계] 규모 및 면적 요건 입력 ---
+st.markdown("### <span style='color:#2C3E50'>2. 건축물 유형 및 규모 확인</span>", unsafe_allow_html=True)
+
+st.markdown("<p style='font-size: 18px; font-weight: bold;'>🏢 건축물 유형을 선택해주세요</p>", unsafe_allow_html=True)
 building_type = st.selectbox(
-    "건축물 유형을 선택해주세요",
-    ["선택하세요", "다세대주택", "단독주택", "다가구주택", "근린생활시설 (사실상 주택 사용)"]
+    "건축물 유형",
+    ["선택하세요", "다세대주택", "단독주택", "다가구주택", "근린생활시설 (사실상 주택 사용)"],
+    label_visibility="collapsed"
 )
 
 area = 0.0
 if building_type == "다세대주택":
-    area = st.number_input("세대당 전용면적을 입력하세요 (㎡)", min_value=0.0, step=1.0)
-elif building_type == "단독주택" or building_type == "다가구주택" or building_type == "근린생활시설 (사실상 주택 사용)":
-    area = st.number_input("건축물 전체 연면적을 입력하세요 (㎡)", min_value=0.0, step=1.0)
+    st.markdown("<p style='font-size: 18px; font-weight: bold;'>📏 세대당 전용면적을 입력하세요 (㎡)</p>", unsafe_allow_html=True)
+    area = st.number_input("면적입력1", min_value=0.0, step=1.0, label_visibility="collapsed")
+elif building_type in ["단독주택", "다가구주택", "근린생활시설 (사실상 주택 사용)"]:
+    st.markdown("<p style='font-size: 18px; font-weight: bold;'>📏 건축물 전체 연면적을 입력하세요 (㎡)</p>", unsafe_allow_html=True)
+    area = st.number_input("면적입력2", min_value=0.0, step=1.0, label_visibility="collapsed")
 
 # --- [3단계] 적용 제외 구역 확인 ---
 st.subheader("3. 적용 제외 구역 해당 여부")
