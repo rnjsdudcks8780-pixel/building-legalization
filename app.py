@@ -4,19 +4,41 @@ import math
 # 페이지 설정
 st.set_page_config(page_title="특정건축물 양성화 서비스", page_icon="🏛️", layout="centered")
 
-# --- 커스텀 CSS (숫자 입력칸 +/- 스핀 버튼 원천 제거) ---
+# --- 커스텀 CSS (모바일 압축, 다크모드 충돌 방지, +/- 스핀 버튼 원천 제거) ---
 st.markdown("""
 <style>
+    /* 전체 배경 */
     .stApp { background-color: #F9FAFB; }
-    .toss-card {
-        background-color: white; padding: 20px; border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 16px;
+    
+    /* 💡 다크모드 충돌 방지: 모든 기본 텍스트 색상을 어두운 색으로 강제 고정 */
+    .stApp p, .stApp label, div[data-baseweb="radio"] div {
+        color: #191F28 !important;
     }
-    .toss-question { font-size: 17px; font-weight: 700; color: #2C3E50; margin-bottom: 10px; }
-    .toss-desc { font-size: 14px; color: #7F8C8D; line-height: 1.5; margin-bottom: 12px; }
+    
+    /* 카드형 UI */
+    .toss-card {
+        background-color: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        margin-bottom: 16px;
+    }
+    .toss-question { font-size: 17px; font-weight: 700; color: #2C3E50 !important; margin-bottom: 10px; }
+    .toss-desc { font-size: 14px; color: #7F8C8D !important; line-height: 1.5; margin-bottom: 12px; }
+    
+    /* 💡 다크모드 충돌 방지: 입력창 및 셀렉트박스 배경을 하얗게, 글자를 검게 강제 고정 */
+    div[data-baseweb="select"] > div, input[type="number"], input[type="text"] {
+        background-color: white !important;
+        color: #191F28 !important;
+    }
+    
+    /* 숫자 입력칸 +/- 버튼 제거 및 폰트 확대 (직접 타이핑만 가능) */
     input[type="number"]::-webkit-inner-spin-button, 
-    input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-    input[type="text"] { font-size: 18px !important; font-weight: bold; }
+    input[type="number"]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    input[type="number"], input[type="text"] { font-size: 18px !important; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -88,9 +110,9 @@ def show_diagnostic_result(completed, residential, restricted, b_type, b_area):
             st.success("✅ 진단 결과: 특정건축물 양성화 **대상에 해당할 가능성이 높습니다.**")
             st.info("""
             **[향후 행정 절차 안내]**
-            1. **상담 및 접수:** 관할 구청 민원실 또는 특정건축물 지원센터에 방문해 주십시오.
+            1. **상담 및 접수:** 관할 구청(건축과 등) 특정건축물 지원센터에 방문하여 상세 상담을 진행해 주십시오.
             2. **필수 서류:** 건축사가 작성한 설계도서 및 현장조사서가 반드시 첨부되어야 합니다.
-            3. **유의 사항:** 본 특별조치법은 시행 후 18개월간만 한시적으로 운영되므로 기한 내 접수를 완료하셔야 합니다.
+            3. **유의 사항:** 본 특별조치법은 시행 후 18개월간만 한시적으로 운영되므로, 기한 내 접수를 완료하셔야 합니다.
             """)
         else:
             st.error(f"❌ 진단 결과: 양성화 대상에 해당하지 않습니다. (사유: {reason})")
@@ -215,7 +237,8 @@ with tab2:
     st.markdown('<div class="toss-card">', unsafe_allow_html=True)
     st.markdown('<div class="toss-question">건축물 위반 정보 입력</div>', unsafe_allow_html=True)
     
-    st.markdown("[👉 내 토지 개별공시지가 확인하기 (부동산공시가격알리미)](https://www.realtyprice.kr/)")
+    # URL이 개별공시지가 상세 검색 페이지(search.htm)로 업데이트 되었습니다.
+    st.markdown("[👉 내 토지 개별공시지가 확인하기 (부동산공시가격알리미)](https://www.realtyprice.kr/notice/gsindividual/search.htm)")
     st.markdown("<p style='font-size: 15px; font-weight: bold; margin-bottom: 5px;'>토지 ㎡당 개별공시지가 (원)</p>", unsafe_allow_html=True)
     st.markdown("<p style='font-size: 13px; color: #7F8C8D; margin-bottom: 5px;'>숫자만 입력하시면 콤마(,)는 알아서 인식됩니다. (예: 2,500,000)</p>", unsafe_allow_html=True)
     
