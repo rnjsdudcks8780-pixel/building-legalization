@@ -1,159 +1,207 @@
 import streamlit as st
-import datetime
 
-# --- 페이지 설정 ---
-st.set_page_config(page_title="양성화 대상 판별 & 과태료 계산기", page_icon="🏠", layout="centered")
+# 페이지 설정
+st.set_page_config(page_title="특정건축물 양성화 서비스", page_icon="🏛️", layout="centered")
 
-# --- 커스텀 CSS ---
+# --- 커스텀 CSS (모바일 압축, 숫자 입력칸 +/- 스핀 버튼 원천 제거) ---
 st.markdown("""
 <style>
     .stApp { background-color: #F9FAFB; }
+    
+    /* 카드형 UI */
     .toss-card {
-        background-color: white; padding: 24px; border-radius: 16px;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); margin-bottom: 24px;
+        background-color: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        margin-bottom: 16px;
     }
-    .toss-title { font-size: 26px; font-weight: 800; color: #191F28; margin-bottom: 8px; }
-    .toss-subtitle { font-size: 20px; font-weight: 700; color: #333D4B; margin-bottom: 12px; }
-    .toss-desc { font-size: 15px; color: #8B95A1; line-height: 1.5; }
-    .highlight-box { background-color: #F2F4F6; padding: 16px; border-radius: 8px; margin-top: 16px;}
+    .toss-question { font-size: 17px; font-weight: 700; color: #2C3E50; margin-bottom: 10px; }
+    .toss-desc { font-size: 14px; color: #7F8C8D; line-height: 1.5; margin-bottom: 12px; }
+    
+    /* 숫자 입력칸 +/- 버튼 제거 및 폰트 확대 (직접 타이핑만 가능) */
+    input[type="number"]::-webkit-inner-spin-button, 
+    input[type="number"]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    input[type="number"], input[type="text"] { font-size: 18px !important; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 상단 타이틀 ---
-st.markdown('<div class="toss-title">특정건축물 양성화 판별 & 과태료 계산기</div>', unsafe_allow_html=True)
-st.markdown('<div class="toss-desc">대상 여부 확인부터 예상 과태료(이행강제금 5회분) 계산까지 한 번에 해보세요.</div>', unsafe_allow_html=True)
-st.write("")
+# --- 팝업 다이얼로그 1: 자가진단 결과 ---
+@st.dialog("📋 자가진단 결과 안내")
+def show_diagnostic_result(completed, residential, restricted, b_type, b_area):
+    if completed == "아니오":
+        st.error("❌ 진단 결과: 양성화 대상에 해당하지 않습니다. (사유: 2023년 12월 31일 이전 완공 기준 미달)")
+    elif residential == "아니오":
+        st.error("❌ 진단 결과: 양성화 대상에 해당하지 않습니다. (사유: 주거용 면적 비율 50% 미만)")
+    elif restricted == "해당됨 (포함)":
+        st.error("❌ 진단 결과: 양성화 대상에 해당하지 않습니다. (사유: 개발제한구역 등 적용 제외 구역 위치)")
+    elif b_type == "선택해주십시오":
+        st.warning("⚠️ 건축물 유형을 정확히 선택해 주십시오.")
+    elif b_area <= 0:
+        st.warning("⚠️ 건축물 면적을 정확히 입력해 주십시오.")
+    else:
+        is_pass = False
+        reason = ""
+
+        if b_type == "다세대주택":
+            if b_area <= 85: is_pass = True
+            else: reason = "세대당 전용면적 85㎡ 초과"
+        elif b_type == "단독주택":
+            if b_area <= 165: is_pass = True
+            else: reason = "연면적 165㎡ 초과"
+        elif b_type == "다가구주택":
+            if b_area <= 660: is_pass = True
+            else: reason = "연면적 660㎡ 초과"
+        elif b_type == "근린생활시설 (사실상 주택 사용)":
+            if b_area <= 165: is_pass = True
+            else: reason = "면적 기준 초과"
+
+        if is_pass:
+            st.success("✅ 진단 결과: 특정건축물 양성화 **대상에 해당할 가능성이 높습니다.**")
+            st.info("""
+            **[향후 행정 절차 안내]**
+            1. **상담 및 접수:** 상단에 안내된 관할 구청 민원실 또는 특정건축물 지원센터에 방문해 주십시오.
+            2. **필수 서류:** 건축사가 작성한 설계도서 및 현장조사서가 반드시 첨부되어야 합니다.
+            3. **유의 사항:** 본 특별조치법은 시행 후 18개월간만 한시적으로 운영되므로 기한 내 접수를 완료하셔야 합니다.
+            """)
+        else:
+            st.error(f"❌ 진단 결과: 양성화 대상에 해당하지 않습니다. (사유: {reason})")
+            
+    if st.button("닫기", use_container_width=True):
+        st.rerun()
+
+# --- 팝업 다이얼로그 2: 과태료 산출 결과 ---
+@st.dialog("💰 예상 과태료 산출 결과")
+def show_fine_result(land_price, violation_area, structure, violation_year, violation_type):
+    base_price = 860000 
+    
+    # 구조 지수 맵핑 (철파이프 0.3 추가)
+    if structure == "철근콘크리트조": str_index = 1.0
+    elif structure == "시멘트벽돌조": str_index = 0.9
+    elif structure == "경량철골조": str_index = 0.65
+    elif structure == "조립식패널조": str_index = 0.55
+    elif structure == "철파이프조 (샤시 등)": str_index = 0.3
+    else: str_index = 1.0
+    
+    # 위치 지수 맵핑 (개략치)
+    if land_price < 500000: loc_index = 0.94
+    elif land_price < 1000000: loc_index = 1.00
+    elif land_price < 3000000: loc_index = 1.15
+    elif land_price < 7000000: loc_index = 1.27
+    else: loc_index = 1.40
+    
+    # 잔가율 계산 (임시 정액법)
+    age = 2026 - violation_year
+    depreciation_rate = max(0.2, 1.0 - (age * 0.02))
+    
+    # 시가표준액 산출
+    unit_price = base_price * str_index * 1.0 * loc_index * depreciation_rate
+    
+    # 1회분 및 최종 5회분 계산
+    penalty_ratio = 0.7 if violation_type == "건축 미신고 (소규모)" else 0.9
+    one_time_fine = unit_price * violation_area * 0.5 * 0.85 * penalty_ratio
+    total_fine = one_time_fine * 5
+
+    st.markdown(f"**추정 1㎡당 시가표준액:** 약 {int(unit_price):,} 원")
+    st.markdown(f"**1회분 이행강제금 예상액:** 약 {int(one_time_fine):,} 원")
+    
+    st.markdown('<div style="background-color: #F2F4F6; padding: 16px; border-radius: 8px; margin-top: 16px;">', unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align: center; color: #3182F6;'>최종 예상 과태료(5회분)</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align: center; color: #191F28;'>약 {int(total_fine):,} 원</h2>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    if st.button("닫기", use_container_width=True):
+        st.rerun()
 
 # ==========================================
-# 탭(Tab) 구성: 1. 대상 판별 / 2. 과태료 계산
+# 최상단 공공기관용 공식 안내문 (고정 노출)
 # ==========================================
-tab1, tab2 = st.tabs(["✅ 양성화 대상 판별", "💰 예상 과태료 계산"])
+st.markdown("<h2 style='text-align: center; color: #2C3E50; margin-bottom: 20px;'>🏛️ 특정건축물 양성화 서비스</h2>", unsafe_allow_html=True)
+st.markdown("""
+<div style='background-color: #EBF5FB; padding: 20px; border-radius: 10px; border-left: 5px solid #2980B9; margin-bottom: 24px;'>
+    <h4 style='margin-top: 0; color: #2980B9;'>안내말씀</h4>
+    <p style='font-size: 15px; color: #34495E; line-height: 1.6; margin-bottom: 0;'>
+        본 서비스는 <strong>「특정건축물 정리에 관한 특별조치법」</strong>(시행 2026. 12. 17.)에 따른 양성화 대상 여부 및 예상 과태료를 사전에 가늠해 보실 수 있도록 마련된 자가진단입니다.<br><br>
+        정확한 <strong>건축물 유형</strong> 및 <strong>면적(㎡)</strong> 확인이 필요하신 경우, <strong>정부24(www.gov.kr)</strong>에서 건축물대장을 무료로 발급받아 확인하시거나 <strong>관할구청 민원여권과(예: 금정구청 ☎ 051-519-4000)</strong>로 문의하여 주시기 바랍니다.<br><br>
+        <span style='color: #C0392B; font-weight: bold;'>※ 주의사항:</span> 과태료(이행강제금 5회분 상당) 부과 및 기한(법 시행 후 18개월) 요건이 존재하므로, 최종 접수는 반드시 관할 지자체 담당 부서 및 건축사와 협의해 주십시오.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 탭(Tabs) 분할
+# ==========================================
+tab1, tab2 = st.tabs(["🏛️ 양성화 대상 자가진단", "💰 예상 과태료(이행강제금) 계산"])
 
 # ------------------------------------------
-# 탭 1: 양성화 대상 판별 로직
+# 탭 1: 양성화 대상 판별
 # ------------------------------------------
 with tab1:
     st.markdown('<div class="toss-card">', unsafe_allow_html=True)
-    st.markdown('<div class="toss-subtitle">1. 기본 요건 확인</div>', unsafe_allow_html=True)
-    is_completed = st.radio("**2023년 12월 31일 이전에 사실상 완공되었나요?**", ("예", "아니오"), index=1)
-    is_residential = st.radio("**전체 면적 중 주거용 비율이 50% 이상인가요?**", ("예", "아니오"), index=1)
+    st.markdown('<div class="toss-question">1. 필수 기본 요건 확인</div>', unsafe_allow_html=True)
+    is_completed = st.radio("Q. 2023년 12월 31일 이전에 사실상 완공된 건축물입니까?", ("예", "아니오"), index=1)
+    is_residential = st.radio("Q. 건축물 전체 연면적 중 주거용 면적의 비율이 50% 이상입니까?", ("예", "아니오"), index=1)
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="toss-card">', unsafe_allow_html=True)
-    st.markdown('<div class="toss-subtitle">2. 건축물 유형 및 규모 확인</div>', unsafe_allow_html=True)
-    building_type = st.selectbox("건축물 유형", ["선택해주세요", "다세대주택", "단독주택", "다가구주택", "근린생활시설 (주택 사용)"])
+    st.markdown('<div class="toss-question">2. 건축물 유형 및 규모(면적) 확인</div>', unsafe_allow_html=True)
+    st.markdown('<div class="toss-desc">건축물대장 상의 정확한 용도와 면적을 기준으로 선택해 주십시오.</div>', unsafe_allow_html=True)
+    building_type = st.selectbox("건축물 유형", ["선택해주십시오", "다세대주택", "단독주택", "다가구주택", "근린생활시설 (사실상 주택 사용)"], label_visibility="collapsed")
+
     area = 0.0
     if building_type == "다세대주택":
-        area = st.number_input("세대당 전용면적 (㎡)", min_value=0.0, step=1.0)
-    elif building_type in ["단독주택", "다가구주택", "근린생활시설 (주택 사용)"]:
-        area = st.number_input("전체 연면적 (㎡)", min_value=0.0, step=1.0)
+        st.markdown("<p style='font-size: 15px; font-weight: bold; margin-bottom: 5px; margin-top: 10px;'>해당 면적 직접 입력 <span style='color:#C0392B;'>(위반부분의 면적을 포함한 세대당 전용면적, ㎡)</span></p>", unsafe_allow_html=True)
+        area = st.number_input("면적 입력", min_value=0.0, step=1.0, label_visibility="collapsed", key="area_m")
+    elif building_type in ["단독주택", "다가구주택", "근린생활시설 (사실상 주택 사용)"]:
+        st.markdown("<p style='font-size: 15px; font-weight: bold; margin-bottom: 5px; margin-top: 10px;'>해당 면적 직접 입력 <span style='color:#C0392B;'>(위반부분의 면적을 포함한 전체 연면적, ㎡)</span></p>", unsafe_allow_html=True)
+        area = st.number_input("면적 입력", min_value=0.0, step=1.0, label_visibility="collapsed", key="area_o")
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="toss-card">', unsafe_allow_html=True)
-    st.markdown('<div class="toss-subtitle">3. 제외 구역 해당 여부</div>', unsafe_allow_html=True)
-    is_restricted_area = st.radio("**보전산지, 개발제한구역, 정비구역 등에 포함되나요?**", ("해당 없음 (안전함)", "제외 구역 포함됨"), index=0)
+    st.markdown('<div class="toss-question">3. 적용 제외 구역 위치 여부</div>', unsafe_allow_html=True)
+    st.markdown('<div class="toss-desc">해당 건축물이 보전산지, 개발제한구역, 정비구역 등에 포함되어 있습니까?</div>', unsafe_allow_html=True)
+    is_restricted_area = st.radio("제외구역여부", ("해당 없음 (미포함)", "해당됨 (포함)"), index=0, horizontal=True, label_visibility="collapsed")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    if st.button("대상 여부 결과 확인", type="primary", use_container_width=True):
-        if is_completed == "아니오": st.error("불가: 2023년 12월 31일 이전 완공 건물만 대상입니다.")
-        elif is_residential == "아니오": st.error("불가: 주거용 면적이 50% 이상이어야 합니다.")
-        elif is_restricted_area == "제외 구역 포함됨": st.error("불가: 적용 제외 구역에 위치하고 있습니다.")
-        elif building_type == "선택해주세요": st.warning("건축물 유형을 선택해주세요.")
-        elif area <= 0: st.warning("면적을 정확히 입력해주세요.")
-        else:
-            is_pass = False
-            reason = ""
-            if building_type == "다세대주택":
-                if area <= 85: is_pass = True
-                else: reason = "다세대주택은 세대당 전용면적 85㎡ 이하여야 합니다."
-            elif building_type == "단독주택":
-                if area <= 165: is_pass = True
-                else: reason = "단독주택은 연면적 165㎡ 이하여야 합니다."
-            elif building_type == "다가구주택":
-                if area <= 660: is_pass = True
-                else: reason = "다가구주택은 연면적 660㎡ 이하여야 합니다."
-            elif building_type == "근린생활시설 (주택 사용)":
-                if area <= 165: is_pass = True
-                else: reason = "면적 기준 초과"
+    st.write("")
 
-            if is_pass:
-                st.success("🎉 양성화 대상일 가능성이 높습니다!")
-                st.info("오른쪽 [예상 과태료 계산] 탭으로 이동하여 납부 예상 금액을 확인해 보세요.")
-            else:
-                st.error(f"❌ 대상 아님: {reason}")
-
+    if st.button("진단 결과 확인하기", type="primary", use_container_width=True):
+        show_diagnostic_result(is_completed, is_residential, is_restricted_area, building_type, area)
 
 # ------------------------------------------
-# 탭 2: 이행강제금(과태료) 계산 로직
+# 탭 2: 과태료(이행강제금) 계산
 # ------------------------------------------
 with tab2:
-    st.warning("""
-    **💡 [예상 과태료 및 행정 처분 안내]**
-    * **본 산출액은 개략적인 예상 금액입니다:** 입력하신 정보를 바탕으로 산출된 '추정치'이며, 인허가 과정에서 관할 지자체의 정밀한 현장 조사 및 공식적인 시가표준액 산정 결과에 따라 최종 금액은 달라질 수 있습니다.
-    * **사용승인 전 완납 조건:** 합법적인 건축물로 양성화(사용승인)를 받으시기 위해서는 해당 과태료가 필수적으로 부과되며, 사용승인 전까지 체납 없이 완납하셔야 합니다. (단, 1년 이내 모두 납부하는 조건으로 사용승인서 우선 발급 가능)
-    * **기납부액 차감:** 과거 해당 위반 사항으로 이미 납부하신 이행강제금이 있다면, 부과 시 그 금액만큼 차감됩니다.
-    """)
-
     st.markdown('<div class="toss-card">', unsafe_allow_html=True)
-    st.markdown('<div class="toss-subtitle">건축물 위반 정보 입력</div>', unsafe_allow_html=True)
+    st.markdown('<div class="toss-question">건축물 위반 정보 입력</div>', unsafe_allow_html=True)
     
-    st.markdown("[👉 내 토지 개별공시지가 확인하기 (부동산공시가격알리미)](https://www.realtyprice.kr/)")
-    land_price = st.number_input("토지 ㎡당 개별공시지가 (원)", min_value=0, step=10000, value=1000000)
+    st.markdown("<p style='font-size: 15px; font-weight: bold; margin-bottom: 5px;'>토지 ㎡당 개별공시지가 (원)</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 13px; color: #7F8C8D; margin-bottom: 5px;'>숫자만 입력하시면 콤마(,)는 알아서 인식됩니다. (예: 1,000,000 또는 1000000)</p>", unsafe_allow_html=True)
+    # 콤마 입력을 지원하기 위해 text_input 사용
+    land_price_str = st.text_input("공시지가", value="1,000,000", label_visibility="collapsed")
+    try:
+        land_price = int(land_price_str.replace(",", "").strip())
+    except ValueError:
+        land_price = 0
+        
+    st.markdown("<p style='font-size: 15px; font-weight: bold; margin-bottom: 5px; margin-top: 15px;'>위반 면적 (㎡)</p>", unsafe_allow_html=True)
+    violation_area = st.number_input("위반 면적", min_value=0.0, step=1.0, value=15.0, label_visibility="collapsed")
     
-    violation_area = st.number_input("위반 면적 (㎡)", min_value=0.0, step=1.0, value=15.0)
+    st.markdown("<p style='font-size: 15px; font-weight: bold; margin-bottom: 5px; margin-top: 15px;'>건축물 주요 구조</p>", unsafe_allow_html=True)
+    structure = st.selectbox("구조", ["철근콘크리트조", "시멘트벽돌조", "경량철골조", "조립식패널조", "철파이프조 (샤시 등)"], label_visibility="collapsed")
     
-    structure = st.selectbox("건축물 주요 구조", ["철근콘크리트조", "시멘트벽돌조", "경량철골조", "조립식패널조"])
+    st.markdown("<p style='font-size: 15px; font-weight: bold; margin-bottom: 5px; margin-top: 15px;'>위반(발생) 연도</p>", unsafe_allow_html=True)
+    violation_year = st.number_input("위반 연도", min_value=1980, max_value=2026, value=2015, label_visibility="collapsed")
     
-    violation_year = st.number_input("위반(발생) 연도", min_value=1980, max_value=2023, value=2015)
-    
-    violation_type = st.radio("위반 유형 (택 1)", ["건축 미신고 (소규모)", "건축 무허가 (대규모)"])
+    st.markdown("<p style='font-size: 15px; font-weight: bold; margin-bottom: 5px; margin-top: 15px;'>위반 유형 (택 1)</p>", unsafe_allow_html=True)
+    violation_type = st.radio("위반 유형", ["건축 미신고 (소규모)", "건축 무허가 (대규모)"], label_visibility="collapsed")
     st.markdown('</div>', unsafe_allow_html=True)
 
     if st.button("💰 예상 과태료(5회분) 계산하기", type="primary", use_container_width=True):
-        if violation_area == 0 or land_price == 0:
-            st.warning("면적과 공시지가를 정확히 입력해주세요.")
+        if violation_area <= 0 or land_price <= 0:
+            st.warning("⚠️ 위반 면적과 공시지가를 정확히 숫자로 입력해 주십시오.")
         else:
-            # 1. 신축가격기준액 (2026년 주거/상업 860,000원 기준)
-            base_price = 860000 
-            
-            # 2. 구조지수 매핑 (단순화)
-            if structure == "철근콘크리트조": str_index = 1.0
-            elif structure == "시멘트벽돌조": str_index = 0.9
-            elif structure == "경량철골조": str_index = 0.65
-            elif structure == "조립식패널조": str_index = 0.55
-            else: str_index = 1.0
-            
-            # 3. 위치지수 매핑 (공시지가 기반 러프한 표준 구간 설정)
-            if land_price < 500000: loc_index = 0.94
-            elif land_price < 1000000: loc_index = 1.00
-            elif land_price < 3000000: loc_index = 1.15
-            elif land_price < 7000000: loc_index = 1.27
-            else: loc_index = 1.40
-            
-            # 4. 잔가율 계산 (단순 정액법 감가 상각 가정 - 매년 2% 감가, 최저 20%)
-            age = 2026 - violation_year
-            depreciation_rate = max(0.2, 1.0 - (age * 0.02))
-            
-            # 5. 시가표준액 산출 (1㎡당)
-            # 수식: 신축가격기준액 * 구조지수 * 용도지수(1.0가정) * 위치지수 * 잔가율
-            unit_price = base_price * str_index * 1.0 * loc_index * depreciation_rate
-            
-            # 6. 1회분 이행강제금 계산 (사용자 제공 로직)
-            # 수식: 시가표준액 * 위반면적 * 0.5 * 무단증축가중(0.85) * 조례비율(미신고 0.7 or 무허가 0.9)
-            penalty_ratio = 0.7 if violation_type == "건축 미신고 (소규모)" else 0.9
-            one_time_fine = unit_price * violation_area * 0.5 * 0.85 * penalty_ratio
-            
-            # 7. 양성화 과태료 (5회분)
-            total_fine = one_time_fine * 5
-
-            # 결과 출력
-            st.markdown('<div class="toss-card">', unsafe_allow_html=True)
-            st.markdown('<div class="toss-title">📊 계산 결과</div>', unsafe_allow_html=True)
-            st.markdown(f"**추정 1㎡당 시가표준액:** 약 {int(unit_price):,} 원")
-            st.markdown(f"**1회분 이행강제금 예상액:** 약 {int(one_time_fine):,} 원")
-            
-            st.markdown('<div class="highlight-box">', unsafe_allow_html=True)
-            st.markdown(f"<h3 style='text-align: center; color: #3182F6;'>최종 예상 과태료(5회분)</h3>", unsafe_allow_html=True)
-            st.markdown(f"<h2 style='text-align: center; color: #191F28;'>약 {int(total_fine):,} 원</h2>", unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+            show_fine_result(land_price, violation_area, structure, violation_year, violation_type)
